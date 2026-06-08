@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#0a0f14" />
+<title>侏罗之夜 · Jurassic Night</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;}
+  html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#e6f1ff;}
+  #app{position:fixed;inset:0;display:flex;flex-direction:column;background:#000;}
+  /* 顶部状态条 */
+  #topBar{position:absolute;top:0;left:0;right:0;padding:env(safe-area-inset-top,8px) 12px 8px;display:flex;justify-content:space-between;align-items:center;z-index:10;pointer-events:none;}
+  .badge{background:rgba(0,0,0,.55);backdrop-filter:blur(6px);border:1px solid rgba(120,200,255,.25);border-radius:8px;padding:6px 10px;font-size:12px;letter-spacing:1px;}
+  .badge b{color:#7ff0c4;}
+  .badge.danger{border-color:#ff4466;color:#ff8899;animation:dangerPulse 0.6s ease-in-out infinite;}
+  @keyframes dangerPulse{0%,100%{box-shadow:0 0 0 rgba(255,68,102,0);}50%{box-shadow:0 0 12px rgba(255,68,102,.6);}}
+
+  /* 3D 画布 */
+  #stage{flex:1;position:relative;overflow:hidden;background:#06090d;}
+  canvas{display:block;width:100%;height:100%;}
+
+  /* 飘字层 */
+  #fxLayer{position:absolute;inset:0;pointer-events:none;overflow:hidden;}
+  .dmg{position:absolute;font-weight:900;font-size:22px;text-shadow:0 0 8px #000,0 2px 0 #000;animation:rise 1s ease-out forwards;pointer-events:none;}
+  .dmg.crit{font-size:30px;color:#ffd24a;}
+  .dmg.player{color:#ff6a6a;}
+  .dmg.enemy{color:#ffffff;}
+  .dmg.heal{color:#7ff0c4;}
+  @keyframes rise{0%{transform:translate(-50%,0) scale(.6);opacity:0;}20%{transform:translate(-50%,-10px) scale(1.1);opacity:1;}100%{transform:translate(-50%,-70px) scale(1);opacity:0;}}
+
+  /* 敌人头顶标签 */
+  .enemyTag{position:absolute;transform:translate(-50%,-100%);text-align:center;pointer-events:auto;cursor:pointer;padding:8px 6px 4px;touch-action:none;z-index:6;}
+  .enemyTag .nm{font-size:11px;color:#ffaaaa;text-shadow:0 1px 2px #000;margin-bottom:2px;font-weight:700;}
+  .enemyTag .hp{width:60px;height:5px;background:rgba(0,0,0,.6);border:1px solid rgba(255,80,80,.5);border-radius:3px;overflow:hidden;margin:0 auto;}
+  .enemyTag .hp i{display:block;height:100%;width:100%;background:linear-gradient(90deg,#ff3355,#ff7788);transition:width .3s;}
+  .enemyTag.targeting{animation:tgblink .6s linear infinite;}
+  .enemyTag.targeting .nm{color:#ffd24a;font-size:13px;}
+  .enemyTag.targeting .hp{width:80px;border-color:#ffd24a;box-shadow:0 0 8px #ffd24a;}
+  .enemyTag.targeting::before{content:"▼ 点击锁定";display:block;color:#ffd24a;font-size:13px;text-shadow:0 0 6px #ffd24a;animation:bounce .6s ease-in-out infinite;font-weight:700;}
+  @keyframes tgblink{0%,100%{filter:brightness(1);}50%{filter:brightness(1.5);}}
+  @keyframes bounce{0%,100%{transform:translateY(0);}50%{transform:translateY(-4px);}}
+
+  /* 交互提示标签 */
+  .hint{position:absolute;transform:translate(-50%,-50%);background:rgba(0,0,0,.7);border:1px solid #7ff0c4;color:#7ff0c4;font-size:11px;padding:4px 8px;border-radius:14px;white-space:nowrap;animation:hintPulse 1.4s ease-in-out infinite;pointer-events:none;}
+  @keyframes hintPulse{0%,100%{opacity:.7;}50%{opacity:1;}}
+
+  /* 底部 HUD */
+  #hud{position:relative;z-index:5;padding:8px 12px calc(env(safe-area-inset-bottom,8px) + 8px);background:linear-gradient(180deg,rgba(8,12,18,0) 0%,rgba(8,12,18,.85) 30%,rgba(8,12,18,.95) 100%);}
+  .pStat{display:flex;align-items:center;gap:8px;margin-bottom:4px;}
+  .pName{font-size:12px;font-weight:700;color:#cfe9ff;width:54px;}
+  .barWrap{flex:1;display:flex;flex-direction:column;gap:3px;}
+  .bar{height:7px;background:rgba(255,255,255,.08);border-radius:4px;overflow:hidden;position:relative;border:1px solid rgba(255,255,255,.1);}
+  .bar > i{display:block;height:100%;width:0%;border-radius:3px;transition:width .25s;}
+  .bar.hp > i{background:linear-gradient(90deg,#ff5577,#ff9aab);}
+  .bar.mp > i{background:linear-gradient(90deg,#5fa3ff,#9ad0ff);}
+  .bar.atb > i{background:linear-gradient(90deg,#ffb347,#ffe07a);}
+  .bar.atb.full > i{background:linear-gradient(90deg,#7ff0c4,#caffe6);box-shadow:0 0 12px #7ff0c4;}
+  .barLabel{font-size:10px;color:#8ea7c2;display:flex;justify-content:space-between;margin-bottom:6px;}
+
+  /* 命令面板（仅战斗中 ATB 满时弹出） */
+  #cmdPanel{position:relative;height:62px;}
+  #cmdMenu{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;position:absolute;left:0;right:0;bottom:0;opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;transform:translateY(10px);}
+  #cmdMenu.show{opacity:1;pointer-events:auto;transform:translateY(0);}
+  .cmd{position:relative;background:linear-gradient(180deg,#1a2838,#0e1722);border:1px solid rgba(127,240,196,.4);color:#e6f1ff;font-weight:700;font-size:12px;padding:8px 4px 6px;border-radius:10px;text-align:center;cursor:pointer;}
+  .cmd .ico{font-size:18px;display:block;margin-bottom:1px;}
+  .cmd:active{transform:scale(.94);}
+  .cmd.disabled{opacity:.35;filter:grayscale(.7);pointer-events:none;}
+
+  /* 子菜单 */
+  #subMenu{position:absolute;left:8px;right:8px;bottom:100%;margin-bottom:6px;background:rgba(10,16,24,.96);border:1px solid rgba(127,240,196,.4);border-radius:10px;padding:6px;display:none;backdrop-filter:blur(8px);box-shadow:0 -8px 30px rgba(0,0,0,.6);}
+  #subMenu.show{display:block;animation:slideUp .2s ease-out;}
+  @keyframes slideUp{from{transform:translateY(8px);opacity:0;}to{transform:translateY(0);opacity:1;}}
+  .subItem{display:flex;justify-content:space-between;align-items:center;padding:9px 10px;border-radius:7px;font-size:13px;cursor:pointer;}
+  .subItem:active{background:rgba(127,240,196,.15);}
+  .subItem.dis{opacity:.4;pointer-events:none;}
+  .subItem .cost{font-size:11px;color:#ffd24a;}
+  .subItem .desc{font-size:10px;color:#8ea7c2;display:block;margin-top:2px;}
+
+  /* 提示信息（"ATB蓄力中..."等） */
+  #atbHint{position:absolute;bottom:0;left:0;right:0;text-align:center;font-size:11px;color:#8ea7c2;letter-spacing:2px;padding:18px 0;pointer-events:none;}
+  #atbHint.hide{display:none;}
+
+  /* 虚拟摇杆 */
+  #joystick{position:absolute;width:120px;height:120px;border-radius:50%;background:rgba(0,0,0,.35);border:2px solid rgba(127,240,196,.55);z-index:8;touch-action:none;display:none;box-shadow:0 0 18px rgba(127,240,196,.25);}
+  #joystick.show{display:block;animation:joyAppear .15s ease-out;}
+  @keyframes joyAppear{from{transform:scale(.6);opacity:0;}to{transform:scale(1);opacity:1;}}
+  #joystick .nub{position:absolute;left:50%;top:50%;width:50px;height:50px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#aff5d4,#3fa884);transform:translate(-50%,-50%);box-shadow:0 0 12px rgba(127,240,196,.6);}
+
+  /* 场景探索按钮：互动键 */
+  #actBtn{position:absolute;right:18px;bottom:calc(env(safe-area-inset-bottom,8px) + 130px);width:74px;height:74px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#ffe07a,#a87a1f);border:2px solid #ffd24a;color:#3a2a08;font-weight:900;font-size:14px;letter-spacing:1px;display:none;align-items:center;justify-content:center;z-index:8;box-shadow:0 0 18px rgba(255,210,74,.5);}
+  #actBtn.show{display:flex;}
+  #actBtn:active{transform:scale(.92);}
+
+  /* 标题/结算 */
+  #titleScreen,#endScreen{position:absolute;inset:0;z-index:50;background:radial-gradient(ellipse at 50% 40%,#1a2a35 0%,#04070a 80%);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px;}
+  #titleScreen h1{font-size:42px;letter-spacing:6px;background:linear-gradient(180deg,#7ff0c4,#3a8a6a);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px;font-weight:900;}
+  #titleScreen .sub{font-size:13px;color:#8ea7c2;letter-spacing:8px;margin-bottom:30px;}
+  #titleScreen .lore{font-size:12px;color:#aab8c9;line-height:1.8;text-align:center;max-width:300px;margin-bottom:20px;}
+  #titleScreen .ctrls{font-size:11px;color:#7ff0c4;line-height:1.6;text-align:center;background:rgba(127,240,196,.08);border:1px solid rgba(127,240,196,.3);border-radius:8px;padding:10px 18px;margin-bottom:30px;}
+  .startBtn{padding:14px 50px;background:linear-gradient(180deg,#1a2838,#0e1722);border:2px solid #7ff0c4;border-radius:30px;color:#7ff0c4;font-size:16px;letter-spacing:4px;font-weight:700;cursor:pointer;}
+  .startBtn:active{transform:scale(.96);}
+  #endScreen{display:none;}
+  #endScreen.show{display:flex;}
+  #endScreen h2{font-size:36px;margin-bottom:20px;letter-spacing:4px;}
+  #endScreen.win h2{color:#7ff0c4;}
+  #endScreen.lose h2{color:#ff6a6a;}
+  #endScreen .info{font-size:13px;color:#aab8c9;margin-bottom:30px;text-align:center;line-height:1.8;}
+
+  /* 提示条 */
+  #toast{position:absolute;top:50px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.75);color:#fff;padding:8px 16px;border-radius:18px;font-size:12px;z-index:30;opacity:0;transition:opacity .3s;pointer-events:none;border:1px solid rgba(127,240,196,.3);white-space:nowrap;}
+  #toast.show{opacity:1;}
+
+  /* 大字提示（区域名 / 遭遇） */
+  #bigTitle{position:absolute;top:30%;left:0;right:0;text-align:center;font-size:30px;font-weight:900;color:#fff;text-shadow:0 0 12px #000,0 0 30px #7ff0c4;letter-spacing:6px;opacity:0;pointer-events:none;z-index:20;}
+  #bigTitle.show{animation:bigIn 2.4s ease-out forwards;}
+  #bigTitle.danger{text-shadow:0 0 12px #000,0 0 30px #ff4466;}
+  @keyframes bigIn{0%{transform:scale(.4);opacity:0;}25%{transform:scale(1.1);opacity:1;}75%{transform:scale(1);opacity:1;}100%{transform:scale(.9);opacity:0;}}
+
+  /* 日志 */
+  #log{position:absolute;left:10px;right:10px;top:50px;font-size:11px;color:#cfe9ff;text-shadow:0 1px 2px #000;pointer-events:none;z-index:8;text-align:center;opacity:.85;}
+
+  /* 黑屏过渡 */
+  #fade{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;z-index:40;transition:opacity .4s;}
+  #fade.show{opacity:1;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="topBar">
+    <div class="badge" id="areaBadge">营地</div>
+    <div class="badge" id="modeBadge">探索中</div>
+  </div>
+  <div id="stage">
+    <canvas id="c"></canvas>
+    <div id="fxLayer"></div>
+    <div id="log"></div>
+    <div id="bigTitle"></div>
+    <div id="joystick"><div class="nub" id="nub"></div></div>
+    <button id="actBtn">行动</button>
+    <div id="fade"></div>
+  </div>
+  <div id="hud">
+    <div class="pStat">
+      <div class="pName">幸存者</div>
+      <div class="barWrap">
+        <div class="bar hp"><i id="hpBar"></i></div>
+        <div class="bar mp"><i id="mpBar"></i></div>
+        <div class="bar atb" id="atbWrap"><i id="atbBar"></i></div>
+      </div>
+    </div>
+    <div class="barLabel"><span>HP <b id="hpTxt">100/100</b></span><span>MP <b id="mpTxt">30/30</b></span><span>ATB <b id="atbTxt">0%</b></span></div>
+    <div id="cmdPanel">
+      <div id="atbHint">— 移动以保持距离，等待 ATB 充满 —</div>
+      <div id="subMenu"></div>
+      <div id="cmdMenu">
+        <div class="cmd" data-cmd="attack"><span class="ico">🔫</span>射击</div>
+        <div class="cmd" data-cmd="skill"><span class="ico">⚡</span>技能</div>
+        <div class="cmd" data-cmd="item"><span class="ico">💉</span>道具</div>
+        <div class="cmd" data-cmd="cancel"><span class="ico">⏸</span>等待</div>
+      </div>
+    </div>
+  </div>
+  <div id="toast"></div>
+  <div id="titleScreen">
+    <h1>侏罗之夜</h1>
+    <div class="sub">JURASSIC NIGHT</div>
+    <div class="lore">2026.06，迷雾岛屿。<br/>原本灭绝的生物再次行走。<br/>你是最后的幸存者。</div>
+    <div class="ctrls">
+      🕹 左下摇杆移动 &nbsp;·&nbsp; 黄圆按钮互动<br/>
+      战斗中可自由跑动闪避，ATB 满后选择行动
+    </div>
+    <button class="startBtn" id="startBtn">开始游戏</button>
+  </div>
+  <div id="endScreen">
+    <h2 id="endTitle">胜利</h2>
+    <div class="info" id="endInfo"></div>
+    <button class="startBtn" id="restartBtn">再来一局</button>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+<script type="module" src="./game.js"></script>
+</body>
+</html>
